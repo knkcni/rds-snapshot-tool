@@ -51,6 +51,11 @@
 			"Default": "NO",
 			"Description": "Set to the region where your RDS instances run, only if such region does not support Step Functions. Leave as NO otherwise"
 		},
+		"BackupKmsArn": {
+			"Type": "String",
+			"Default": "NO",
+			"Description": "Set ARN of kms key to copy snapshot with shared key (remember, destination account should be access it)"
+		},
 		"DeleteOldSnapshots": {
 			"Type": "String",
 			"Default": "TRUE",
@@ -105,6 +110,9 @@
 			},
 			"eu-west-1": {
 				"Bucket": "snapshots-tool-rds-eu-west-1"
+			},
+			"eu-west-3": {
+				"Bucket": "snapshots-tool-rds-smnds-eu-west-3"
 			},
 			"eu-central-1": {
 				"Bucket": "snapshots-tool-rds-eu-central-1"
@@ -294,12 +302,15 @@
 								"Action": [
 									"rds:CreateDBSnapshot",
 									"rds:DeleteDBSnapshot",
+									"rds:CopyDBSnapshot",
 									"rds:DescribeDBInstances",
 									"rds:DescribeDBSnapshots",
 									"rds:ModifyDBSnapshotAttribute",
 									"rds:DescribeDBSnapshotAttributes",
 									"rds:ListTagsForResource",
-									"rds:AddTagsToResource"
+									"rds:AddTagsToResource",
+									"kms:DescribeKey",
+									"kms:CreateGrant"
 								],
 								"Resource": "*"
 							}]
@@ -384,6 +395,9 @@
 						},
 						"REGION_OVERRIDE": {
 							"Ref": "SourceRegionOverride"
+						},
+						"BACKUP_KMS":{
+							"Ref": "BackupKmsArn"
 						}
 					}
 				},
