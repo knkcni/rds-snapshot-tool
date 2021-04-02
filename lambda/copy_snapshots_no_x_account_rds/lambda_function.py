@@ -68,7 +68,7 @@ def lambda_handler(event, context):
                     if source_snapshots[source_identifier]['Status'] == 'available':
                         try:
                             copy_remote(source_identifier, own_snapshots_encryption[source_identifier])
-                 
+
                         except Exception as e:
                             pending_copies += 1
                             logger.error('Remote copy pending: %s: %s (%s)' % (
