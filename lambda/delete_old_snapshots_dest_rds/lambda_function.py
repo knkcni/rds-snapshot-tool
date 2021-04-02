@@ -17,7 +17,7 @@ import boto3
 import time
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, date, timedelta
 import re
 from snapshots_tool_utils import *
 
@@ -27,12 +27,11 @@ DEST_REGION = os.getenv('DEST_REGION', os.getenv('AWS_DEFAULT_REGION')).strip()
 LOGLEVEL = os.getenv('LOG_LEVEL', 'ERROR').strip()
 PATTERN = os.getenv('SNAPSHOT_PATTERN', 'ALL_SNAPSHOTS')
 RETENTION_DAYS = int(os.getenv('RETENTION_DAYS'))
+RETENTION_MONTHS = 1
 TIMESTAMP_FORMAT = '%Y-%m-%d-%H-%M'
 
 logger = logging.getLogger()
 logger.setLevel(LOGLEVEL.upper())
-
-
 
 def lambda_handler(event, context):
     delete_pending = 0
@@ -40,13 +39,27 @@ def lambda_handler(event, context):
     client = boto3.client('rds', region_name=DEST_REGION)
     response = paginate_api_call(client, 'describe_db_snapshots', 'DBSnapshots')
 
+    # determine array date to retain
+    dt = datetime.today()
+    retain_day = []
+
+    start_date = dt + timedelta(days=-(32 * RETENTION_MONTHS))
+    delta = dt - start_date
+
+    for i in range(delta.days + 1):
+        day = start_date + timedelta(days=i)
+        if day.weekday() == 0:
+            retain_day.append(str(f'{day}T11:'))
+    print(retain_day)
+    logger.info('Retain date array: %s.' % (str(retain_day)))
+
     # Filter out the ones not created automatically or with other methods
     filtered_list = get_own_snapshots_dest(PATTERN, response)
 
     for snapshot in filtered_list.keys():
 
         creation_date = get_timestamp(snapshot, filtered_list)
-
+        logger.info(creation_date) # 2021-04-01 10:15:00
         if creation_date:
             snapshot_arn = filtered_list[snapshot]['Arn']
             response_tags = client.list_tags_for_resource(
@@ -56,23 +69,32 @@ def lambda_handler(event, context):
                 difference = datetime.now() - creation_date
                 days_difference = difference.total_seconds() / 3600 / 24
 
-                # if we are past RETENTION_DAYS
-                if days_difference > RETENTION_DAYS:
-                    # delete it
-                    logger.info('Deleting %s. %s days old' %
-                                (snapshot, days_difference))
+                # check if we need to keep this value for more long
+                if not (str(creation_date).replace(" ", "T"))[:14] in retain_day:
 
-                    try:
-                        client.delete_db_snapshot(
-                            DBSnapshotIdentifier=snapshot)
+                    # if we are past RETENTION_DAYS
+                    if days_difference > RETENTION_DAYS:
 
-                    except Exception as e:
-                        delete_pending += 1
-                        logger.info('Could not delete %s (%s)' % (snapshot, e))
+                        # delete it
+                        logger.info('Deleting %s. %s days old' %
+                                    (snapshot, days_difference))
+                        print('Deleting %s. %s days old' %
+                                    (snapshot, days_difference))
 
+                        try:
+                            client.delete_db_snapshot(
+                                DBSnapshotIdentifier=snapshot)
+
+                        except Exception as e:
+                            delete_pending += 1
+                            logger.error('Could not delete %s (%s)' % (snapshot, e))
+
+                    else:
+                        logger.info('Not deleting %s. Only %s days old' %
+                                    (snapshot, days_difference))
                 else:
-                    logger.info('Not deleting %s. Only %s days old' %
-                                (snapshot, days_difference))
+                    logger.info('Not deleting %s. Snapshot timed %s need to be retain for %s month(s)' %
+                                (snapshot, creation_date, RETENTION_MONTHS))
 
             else:
                 logger.info(
